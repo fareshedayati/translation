@@ -1,0 +1,12 @@
+I have attached the completed examples.jsonl file containing examples from all available document pairs. I may also have attached an existing glossary.jsonl.
+
+Create, expand, or revise the context-sensitive SOURCE-to-TARGET translation lexicon using the complete examples.jsonl file.
+
+Automatically find important words and phrases, including theological terms, titles, institutions, names, and recurring expressions. For every source term, find all target translations used in the examples. If the same term is translated differently in different contexts, keep every valid translation and explain exactly when each one should be used. Include short examples showing those contexts.
+
+If an existing glossary is attached, update it according to the complete examples file. Preserve valid existing meanings, add missing terms and contextual translations, improve unclear `when` descriptions, merge duplicates, and correct entries that conflict with the evidence. Do not reduce a term to one translation when the examples show several valid contextual translations.
+
+Return the complete updated file named glossary.jsonl. Each line must use this format:
+{"source":"source term or phrase","senses":[{"target":"target translation","when":"the context in which this translation should be used","examples":["short source example"]}],"notes":"optional spelling, capitalization, grammar, or consistency guidance"}
+
+Return only valid JSONL, with one object per line. Do not return explanations or Markdown.

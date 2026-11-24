@@ -1,0 +1,13 @@
+I have attached:
+1. A new SOURCE document.
+2. Its existing TARGET-language translation.
+3. The current examples.jsonl file, if one already exists.
+
+Automatically align the two documents into matching translation examples. Paragraph-level examples are preferred because they preserve more meaning and context. Keep each complete paragraph together whenever it has a matching translated paragraph. Keep the original wording on both sides, skip paragraphs that cannot be aligned confidently, and preserve document order.
+
+If examples.jsonl is attached, preserve all existing examples and append the new examples to it. Do not add duplicate source-target pairs. Continue the existing ID sequence so every ID remains unique. If no examples.jsonl is attached, create a new file beginning with `example-0001`.
+
+Return the complete updated file named examples.jsonl, containing both the previous examples and the newly appended examples. Each line must be one JSON object in this format:
+{"id":"example-0001","source":"complete source paragraph","target":"matching complete target paragraph"}
+
+Return only valid JSONL, with one object per line. Do not return explanations or Markdown.

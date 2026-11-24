@@ -1,0 +1,5 @@
+# Install this in addition to requirements.txt only when semantic retrieval is needed.
+-r requirements.txt
+numpy>=1.26,<3
+sentence-transformers>=3.4,<6
+torch>=2.2

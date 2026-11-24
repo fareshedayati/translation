@@ -1,0 +1,5 @@
+I have attached an existing glossary.jsonl and additional examples.jsonl.
+
+Improve the glossary automatically. Add important missing terms, add missing contextual translations to existing terms, merge duplicates, and rewrite unclear `when` descriptions so the correct translation can be selected from context. Never reduce a term to one translation when the examples show several valid contextual translations.
+
+Return the complete improved glossary as a file named glossary.jsonl, using the same JSONL format as the input. Return only valid JSONL, with one object per line. Do not return explanations or Markdown.
