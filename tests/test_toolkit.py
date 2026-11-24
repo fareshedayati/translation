@@ -13,6 +13,7 @@ from translator.data import (
 )
 from translator.retrieval import BM25Index
 from scripts.build_glossary import build_records, collect_evidence
+from scripts.merge_glossaries import merge_entries
 
 
 class ToolkitTests(unittest.TestCase):
@@ -94,6 +95,39 @@ class ToolkitTests(unittest.TestCase):
             min_lift=3,
         )
         self.assertEqual([sense["target"] for sense in records[0]["senses"]], ["light", "radiance"])
+
+    def test_glossary_merge_preserves_evidence_and_adds_legacy_senses(self):
+        json_entries = {
+            "نور": {
+                "source": "نور",
+                "senses": [
+                    {
+                        "target": "light",
+                        "when": "Use for illumination.",
+                        "examples": ["نور جهان"],
+                    }
+                ],
+                "sense_keys": {"light"},
+                "notes": ["Evidence-backed."],
+                "json_sense_count": 1,
+            }
+        }
+        tsv_groups = {
+            "نور": {
+                "source": "نور",
+                "row_count": 3,
+                "targets": {
+                    "light": {"target": "light", "count": 2, "first_line": 2},
+                    "radiance": {"target": "radiance", "count": 1, "first_line": 4},
+                },
+            }
+        }
+        records, stats = merge_entries(json_entries, tsv_groups)
+        self.assertEqual([sense["target"] for sense in records[0]["senses"]], ["light", "radiance"])
+        self.assertEqual(records[0]["senses"][0]["examples"], ["نور جهان"])
+        self.assertEqual(records[0]["senses"][1]["examples"], [])
+        self.assertEqual(stats["tsv_senses_already_covered"], 1)
+        self.assertEqual(stats["legacy_senses_added"], 1)
 
 
 if __name__ == "__main__":

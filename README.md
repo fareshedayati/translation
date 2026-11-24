@@ -22,6 +22,7 @@ Nothing is trained by this package. The examples and lexicon are supplied to the
 - [`config.example.yaml`](config.example.yaml): all normal runtime settings
 - [`data/examples.jsonl`](data/examples.jsonl): imported Persian→English parallel examples used by the validation run
 - [`data/glossary.jsonl`](data/glossary.jsonl): evidence-backed, multi-sense JSONL glossary generated from the parallel examples
+- [`data/glossary.merged.jsonl`](data/glossary.merged.jsonl): complete JSONL merge of the evidence-backed glossary and legacy TSV candidates
 - [`data/glossary.tsv`](data/glossary.tsv): imported Persian→English candidate term pairs used to seed the JSONL glossary build
 - [`data/examples.example.jsonl`](data/examples.example.jsonl): valid parallel-example format
 - [`data/glossary.example.jsonl`](data/glossary.example.jsonl): valid context-sensitive lexicon format
@@ -33,6 +34,7 @@ Nothing is trained by this package. The examples and lexicon are supplied to the
 - [`requirements.txt`](requirements.txt): lightweight BM25 and API dependencies
 - [`requirements-semantic.txt`](requirements-semantic.txt): additional semantic-search/GPU dependencies
 - [`scripts/build_glossary.py`](scripts/build_glossary.py): reproducible TSV-candidate and parallel-example to contextual-JSONL builder
+- [`scripts/merge_glossaries.py`](scripts/merge_glossaries.py): merges the evidence-backed JSONL and complete legacy TSV into one JSONL file
 - `translator/`: executable Python package
 
 ## Quick start: BM25 (recommended first run)
@@ -224,6 +226,17 @@ python scripts/build_glossary.py \
 ```
 
 The builder scans the complete examples collection. It retains a source→target sense only when both expressions occur in the same aligned example, their relative positions are reasonably compatible, the association occurs more often than chance, and the configured minimum evidence is met. It keeps multiple supported renderings and adds source-paragraph evidence plus nearby source-language context cues. The result is a reproducible draft, not a claim that every automatically aligned sense is correct. A qualified bilingual reviewer should still revise each `when` description and remove misleading senses before production use. The original TSV remains useful as candidate material, but `data/glossary.jsonl` is the file to pass to the translator.
+
+To retain every distinct legacy TSV candidate while preserving the richer example-backed senses, create the complete merged JSONL:
+
+```bash
+python scripts/merge_glossaries.py \
+  --jsonl data/glossary.jsonl \
+  --tsv data/glossary.tsv \
+  --output data/glossary.merged.jsonl
+```
+
+The merge normalizes Persian/Arabic character variants for deduplication and places evidence-backed senses before legacy-only candidates. A legacy-only sense has an empty `examples` list and an explicit `when` warning; it is not presented as example-verified. Duplicate TSV rows and renderings already covered by the evidence-backed glossary are collapsed. Use `data/glossary.merged.jsonl` when full legacy coverage is required, but review its legacy-only candidates carefully. For the smaller, higher-precision glossary, continue to use `data/glossary.jsonl`.
 
 One source expression can contain several contextual translations:
 
