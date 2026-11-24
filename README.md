@@ -22,7 +22,6 @@ Nothing is trained by this package. The examples and lexicon are supplied to the
 - [`config.example.yaml`](config.example.yaml): all normal runtime settings
 - [`data/examples.jsonl`](data/examples.jsonl): imported Persian→English parallel examples used by the validation run
 - [`data/glossary.jsonl`](data/glossary.jsonl): evidence-backed, multi-sense JSONL glossary generated from the parallel examples
-- [`data/glossary.merged.jsonl`](data/glossary.merged.jsonl): complete JSONL merge of the evidence-backed glossary and legacy TSV candidates
 - [`data/glossary.tsv`](data/glossary.tsv): imported Persian→English candidate term pairs used to seed the JSONL glossary build
 - [`data/examples.example.jsonl`](data/examples.example.jsonl): valid parallel-example format
 - [`data/glossary.example.jsonl`](data/glossary.example.jsonl): valid context-sensitive lexicon format
@@ -236,7 +235,7 @@ python scripts/merge_glossaries.py \
   --output data/glossary.merged.jsonl
 ```
 
-The merge normalizes Persian/Arabic character variants for deduplication and places evidence-backed senses before legacy-only candidates. A legacy-only sense has an empty `examples` list and an explicit `when` warning; it is not presented as example-verified. Duplicate TSV rows and renderings already covered by the evidence-backed glossary are collapsed. Use `data/glossary.merged.jsonl` when full legacy coverage is required, but review its legacy-only candidates carefully. For the smaller, higher-precision glossary, continue to use `data/glossary.jsonl`.
+The merge normalizes Persian/Arabic character variants for deduplication and places evidence-backed senses before legacy-only candidates. A legacy-only sense has an empty `examples` list and an explicit `when` warning; it is not presented as example-verified. Duplicate TSV rows and renderings already covered by the evidence-backed glossary are collapsed. The generated `data/glossary.merged.jsonl` is intentionally not committed because it is large. Generate it locally when full legacy coverage is required, and review its legacy-only candidates carefully. For the smaller, higher-precision bundled glossary, continue to use `data/glossary.jsonl`.
 
 One source expression can contain several contextual translations:
 

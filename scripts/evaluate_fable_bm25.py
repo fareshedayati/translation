@@ -40,7 +40,7 @@ def write_json(path: Path, payload: dict) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--style-repo", type=Path, default=Path("../Style-Aware-MT"))
-    parser.add_argument("--glossary", type=Path, default=Path("data/glossary.merged.jsonl"))
+    parser.add_argument("--glossary", type=Path, default=Path("data/glossary.jsonl"))
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--generation-cap", type=float, default=8.0)
     parser.add_argument("--prepare-only", action="store_true")
