@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import re
 import shutil
@@ -60,7 +61,8 @@ def load_examples(path: Path) -> list[Example]:
     examples: list[Example] = []
     seen: set[str] = set()
     for line_no, row in _read_jsonl(path):
-        source, target = str(row.get("source", "")).strip(), str(row.get("target", "")).strip()
+        source = str(row.get("source", row.get("input", ""))).strip()
+        target = str(row.get("target", row.get("output", ""))).strip()
         example_id = str(row.get("id", f"line-{line_no}")).strip()
         if not source or not target:
             raise ValueError(f"{path}:{line_no}: example requires non-empty source and target")
@@ -76,6 +78,31 @@ def load_examples(path: Path) -> list[Example]:
 def load_glossary(path: Path | None) -> list[GlossaryEntry]:
     if path is None:
         return []
+    if path.suffix.lower() == ".tsv":
+        grouped: dict[str, list[str]] = {}
+        with path.open(encoding="utf-8-sig", newline="") as handle:
+            for line_no, row in enumerate(csv.DictReader(handle, delimiter="\t"), 2):
+                source = str(row.get("source", "")).strip()
+                target = str(row.get("target", "")).strip()
+                if not source or not target:
+                    continue
+                grouped.setdefault(source, [])
+                if target not in grouped[source]:
+                    grouped[source].append(target)
+        return [
+            GlossaryEntry(
+                source,
+                tuple(
+                    GlossarySense(
+                        target,
+                        "Use this rendering only when it fits the passage context and retrieved examples.",
+                    )
+                    for target in targets
+                ),
+                line=0,
+            )
+            for source, targets in grouped.items()
+        ]
     entries: list[GlossaryEntry] = []
     for line_no, row in _read_jsonl(path):
         source = str(row.get("source", "")).strip()

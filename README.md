@@ -20,6 +20,9 @@ Nothing is trained by this package. The examples and lexicon are supplied to the
 ## Folder map
 
 - [`config.example.yaml`](config.example.yaml): all normal runtime settings
+- [`data/examples.jsonl`](data/examples.jsonl): imported Persian→English parallel examples used by the validation run
+- [`data/glossary.jsonl`](data/glossary.jsonl): evidence-backed, multi-sense JSONL glossary generated from the parallel examples
+- [`data/glossary.tsv`](data/glossary.tsv): imported Persian→English candidate term pairs used to seed the JSONL glossary build
 - [`data/examples.example.jsonl`](data/examples.example.jsonl): valid parallel-example format
 - [`data/glossary.example.jsonl`](data/glossary.example.jsonl): valid context-sensitive lexicon format
 - [`data/input.example.jsonl`](data/input.example.jsonl): valid input format
@@ -29,6 +32,7 @@ Nothing is trained by this package. The examples and lexicon are supplied to the
 - [`prompts/audit_glossary.txt`](prompts/audit_glossary.txt): prompt for checking an existing lexicon
 - [`requirements.txt`](requirements.txt): lightweight BM25 and API dependencies
 - [`requirements-semantic.txt`](requirements-semantic.txt): additional semantic-search/GPU dependencies
+- [`scripts/build_glossary.py`](scripts/build_glossary.py): reproducible TSV-candidate and parallel-example to contextual-JSONL builder
 - `translator/`: executable Python package
 
 ## Quick start: BM25 (recommended first run)
@@ -132,7 +136,7 @@ Model availability and exact model IDs depend on the account and change over tim
 
 ## Required documents and exact formats
 
-Parallel examples and the glossary use UTF-8 JSONL: **one complete JSON object per line**, not a JSON array or Markdown.
+New parallel examples and context-sensitive glossaries should use UTF-8 JSONL: **one complete JSON object per line**, not a JSON array or Markdown. The loader also accepts an existing two-column TSV glossary with `source` and `target` headers. Repeated TSV rows for the same source term are grouped as alternative translations, but TSV cannot record the precise `when` conditions and supporting examples available in the recommended JSONL format.
 
 ### 1. Input passages
 
@@ -209,6 +213,17 @@ Save the generated file as `data/glossary.jsonl` and set:
 files:
   glossary: "data/glossary.jsonl"
 ```
+
+If an existing `source`/`target` TSV supplies candidate term pairs, this repository can build an evidence-backed JSONL draft automatically:
+
+```bash
+python scripts/build_glossary.py \
+  --examples data/examples.jsonl \
+  --candidate-glossary data/glossary.tsv \
+  --output data/glossary.jsonl
+```
+
+The builder scans the complete examples collection. It retains a source→target sense only when both expressions occur in the same aligned example, their relative positions are reasonably compatible, the association occurs more often than chance, and the configured minimum evidence is met. It keeps multiple supported renderings and adds source-paragraph evidence plus nearby source-language context cues. The result is a reproducible draft, not a claim that every automatically aligned sense is correct. A qualified bilingual reviewer should still revise each `when` description and remove misleading senses before production use. The original TSV remains useful as candidate material, but `data/glossary.jsonl` is the file to pass to the translator.
 
 One source expression can contain several contextual translations:
 
@@ -323,7 +338,7 @@ Important YAML parameters:
 | `languages.source` / `.target` | Human-readable language names inserted into the prompt |
 | `files.input` | `.docx`, `.doc`, `.txt`, or optional `.jsonl` source passages |
 | `files.examples` | parallel-example JSONL; optional only for `none` retrieval |
-| `files.glossary` | context-sensitive lexicon JSONL; may be omitted |
+| `files.glossary` | context-sensitive lexicon JSONL, or imported `source`/`target` TSV; may be omitted |
 | `files.style_instruction` | optional plain-text target-style guidance |
 | `files.output` | output JSONL path |
 | `provider.name` | `openai` or `anthropic` |
