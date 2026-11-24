@@ -59,14 +59,56 @@ python -m translator --config config.yaml
 
 ## API keys and provider selection
 
-Copy [`.env.example`](.env.example) to `.env`. Add the key for the provider being used:
+### Get an Anthropic/Claude API key
+
+1. Open the [Claude Platform API Keys page](https://platform.claude.com/settings/keys).
+2. Sign in or create a Claude Platform account. This is the developer platform, not the normal Claude chat page.
+3. Create or select the workspace that will pay for the translations.
+4. Click **Create key**.
+5. Give the key a recognizable name, such as `translation-project`.
+6. Copy the key when it is displayed and store it securely.
+7. Copy [`.env.example`](.env.example) to a new file named `.env`.
+8. Put the key after `ANTHROPIC_API_KEY=`:
+
+```dotenv
+ANTHROPIC_API_KEY=your_anthropic_key_here
+```
+
+9. If the API reports a billing or credit error, add billing information or credits in the Claude Platform Console.
+
+The supplied configuration uses Claude, so this is the only key required for the default setup. See the [official Claude API Keys page](https://platform.claude.com/settings/keys) if the console layout changes.
+
+### Get an OpenAI API key
+
+1. Open the [OpenAI Platform API Keys page](https://platform.openai.com/api-keys).
+2. Sign in or create an OpenAI Platform account. API billing is managed through the Platform account.
+3. Select or create the project that will pay for the translations.
+4. Click **Create new secret key**.
+5. Give the key a recognizable name, such as `translation-project`, and choose the required project permissions.
+6. Copy the secret key when it is displayed and store it securely.
+7. Copy [`.env.example`](.env.example) to a new file named `.env` if it does not already exist.
+8. Put the key after `OPENAI_API_KEY=`:
+
+```dotenv
+OPENAI_API_KEY=your_openai_key_here
+```
+
+9. If the API reports a billing or quota error, configure billing and usage limits in the OpenAI Platform project.
+
+The [official OpenAI developer quickstart](https://developers.openai.com/api/docs/quickstart) also explains key creation and environment-variable setup.
+
+### Keep keys private
+
+The completed `.env` file can contain either or both keys:
 
 ```dotenv
 OPENAI_API_KEY=your_openai_key_here
 ANTHROPIC_API_KEY=your_anthropic_key_here
 ```
 
-Do not put keys in YAML, source code, prompts, or committed files. `.env` is ignored by Git. The program loads `.env` beside the config file and reads the environment variable named by `provider.api_key_env`.
+Do not put keys in YAML, source code, prompts, shared documents, or committed files. Never send an API key to another person. `.env` is ignored by Git. The program loads `.env` beside the config file and reads the environment variable named by `provider.api_key_env`. If a key is exposed, revoke it in the provider console and create a replacement.
+
+### Select a provider
 
 For OpenAI:
 
