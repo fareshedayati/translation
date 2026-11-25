@@ -37,7 +37,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--glossary-examples-per-phrase",
         type=int,
-        help="Relevant parallel examples supplied for each matched glossary phrase (default: 15)",
+        help="Relevant parallel examples supplied for each matched glossary phrase (default: 0/off)",
     )
     result.add_argument("--paragraphs-per-request", type=int, help="Consecutive paragraphs per API request (default: 1)")
     result.add_argument("--workers", type=int, help="Concurrent API requests (default: 4)")
@@ -106,7 +106,7 @@ def main(argv: list[str] | None = None) -> None:
     method = retrieval_cfg.get("method", "bm25")
     if method not in {"none", "bm25", "semantic", "hybrid"}:
         raise ValueError("retrieval.method must be none, bm25, semantic, or hybrid")
-    bm25_samples, semantic_samples = int(retrieval_cfg.get("bm25_samples", 16)), int(retrieval_cfg.get("semantic_samples", 4))
+    bm25_samples, semantic_samples = int(retrieval_cfg.get("bm25_samples", 16)), int(retrieval_cfg.get("semantic_samples", 0))
     if bm25_samples < 0 or semantic_samples < 0:
         raise ValueError("retrieval sample counts cannot be negative")
     if method == "bm25" and bm25_samples < 1:
@@ -122,7 +122,7 @@ def main(argv: list[str] | None = None) -> None:
     if max_glossary_senses < 1:
         raise ValueError("retrieval.max_glossary_senses must be at least 1")
     glossary_examples_per_phrase = int(
-        retrieval_cfg.get("glossary_examples_per_phrase", 15)
+        retrieval_cfg.get("glossary_examples_per_phrase", 0)
     )
     if glossary_examples_per_phrase < 0:
         raise ValueError("retrieval.glossary_examples_per_phrase cannot be negative")
@@ -183,6 +183,9 @@ def main(argv: list[str] | None = None) -> None:
             matched,
             glossary_examples_per_phrase,
         )
+        examples_by_glossary_entry = {
+            item.entry: item.examples for item in phrase_examples
+        }
         prompt = user_prompt(
             source,
             retrieved,
@@ -206,19 +209,19 @@ def main(argv: list[str] | None = None) -> None:
                 "retrieved_examples": [{"id": item.example.id, "source_file": str(examples_path) if examples_path else None, "source_line": item.example.line, "methods": item.methods, "scores": item.scores} for item in retrieved],
                 "glossary_matches": [
                     {
-                        "source": item.entry.source,
+                        "source": entry.source,
                         "parallel_examples": [
                             {
                                 "id": example.id,
                                 "source_file": str(examples_path) if examples_path else None,
                                 "source_line": example.line,
                             }
-                            for example in item.examples
+                            for example in examples_by_glossary_entry.get(entry, ())
                         ],
                         "glossary_file": str(glossary_path),
-                        "source_line": item.entry.line,
+                        "source_line": entry.line,
                     }
-                    for item in phrase_examples
+                    for entry in matched
                 ],
                 "metadata": [record.metadata for record in batch],
                 "paragraph_count": len(batch),

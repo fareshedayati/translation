@@ -17,17 +17,18 @@ provider:
   api_key_env: "ANTHROPIC_API_KEY"
 
 retrieval:
-  # One of: bm25, semantic, hybrid, none
+  # Validated default: BM25 only. No semantic model or GPU is used.
+  # Other available methods are: semantic, hybrid, none.
   method: "bm25"
   bm25_samples: 16
-  semantic_samples: 4
+  semantic_samples: 0
   bm25_k1: 1.5
   bm25_b: 0.75
   ordering: "most_similar_last"
   max_glossary_senses: 15
-  # For every matched glossary term or phrase, rank parallel examples that
-  # contain it against the current passage and supply the best 15.
-  glossary_examples_per_phrase: 15
+  # The best validated run did not add a second set of examples per phrase.
+  # Increase this only after validation; large values can add substantial noise.
+  glossary_examples_per_phrase: 0
   semantic_model: "intfloat/multilingual-e5-base"
   # "cuda" is recommended. "cpu" works but can be much slower.
   semantic_device: "cuda"

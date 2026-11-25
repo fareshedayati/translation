@@ -12,7 +12,7 @@ For each source passage, the program:
 2. Retrieves examples with BM25, semantic search, both, or neither.
 3. Finds source terms and phrases from the context-sensitive lexicon that occur in the passage.
 4. For every matched phrase, finds parallel examples containing it and ranks those examples against the current passage.
-5. Builds a prompt containing the translation instruction, general retrieved examples, lexicon senses, the best phrase-specific examples, and the source passage.
+5. Builds a prompt containing the translation instruction, general retrieved examples, lexicon senses, optional phrase-specific examples, and the source passage.
 6. Sends that prompt to OpenAI or Anthropic, unless `--dry-run` is used.
 7. Writes JSONL containing the translation and traceable links back to the exact example and lexicon file lines used.
 
@@ -292,20 +292,23 @@ Set `retrieval.method` to one of four values:
 | `semantic` | multilingual embedding similarity | strongly recommended | conceptual similarity despite different wording |
 | `hybrid` | BM25 plus semantic results | strongly recommended | combining lexical and conceptual evidence |
 
-The recommended default is BM25 with 16 paragraph examples. It does not require semantic retrieval or a GPU:
+The recommended default mirrors the parameters of the 0.7956 COMET BM25 experiment: Claude Fable 5.1, 16 BM25 paragraph examples, most-similar-last ordering, up to 15 glossary senses, low reasoning effort, and no semantic or phrase-specific example retrieval. It does not require a GPU:
 
 ```yaml
 retrieval:
   method: bm25
   bm25_samples: 16
+  semantic_samples: 0
   ordering: most_similar_last
   max_glossary_senses: 15
-  glossary_examples_per_phrase: 15
+  glossary_examples_per_phrase: 0
 ```
 
-This retrieves the 16 most relevant source-side paragraph examples and places the most similar examples nearest to the passage being translated. It also handles every matched glossary term or phrase separately: it finds all parallel source–target examples containing that complete phrase, removes the phrase itself from the relevance query so surrounding context drives selection, and supplies the best 15 examples for that phrase. If context words do not distinguish candidates, corpus order is the deterministic fallback. Phrase examples are selected with CPU-only BM25 and do not require a GPU.
+This retrieves the 16 most relevant source-side paragraph examples and places the most similar examples nearest to the passage being translated. Every glossary term or phrase found in the source is included with up to 15 translations. Semantic retrieval is disabled, and no additional examples are added separately for each glossary phrase.
 
-`bm25_samples` controls the general paragraph examples for the whole input. `glossary_examples_per_phrase` is different: it controls supporting parallel examples for each matched glossary phrase. `max_glossary_senses` independently limits how many contextual glossary translations are displayed for that phrase.
+The 0.7956 score also depended on the experiment's comprehensive glossary (`all_Glossary_2.csv`, SHA-256 `c33485163f11e1e01150e15806406ad6eb95e6572b7059037e9338c840d2bdae`) and its evaluated Persian/Arabic→English data. The same parameters with a smaller or differently prepared glossary are not expected to reproduce that score. The comprehensive glossary is not bundled here because its provenance must be established before redistribution.
+
+`bm25_samples` controls the general paragraph examples for the whole input. `max_glossary_senses` independently limits how many contextual glossary translations are displayed for each matched phrase. `glossary_examples_per_phrase` is an optional experimental feature that adds another set of supporting parallel examples for every matched glossary phrase; it is off by default.
 
 Because the phrase-specific limit applies separately to every matched phrase, `15` can create a large prompt when one passage contains many glossary matches. The 132-passage experiment selected 8,294 phrase-specific examples. A character-based dry-run estimate predicted approximately 1.0 million input tokens, but Anthropic actually billed 1,772,367 input tokens; provider tokenization is authoritative. Always inspect a dry run, leave a substantial cost margin, and check provider token limits before a paid run. Reduce `glossary_examples_per_phrase` when prompts are too large; use `0` to disable this additional evidence while retaining ordinary glossary matches.
 
@@ -370,9 +373,10 @@ python -m translator \
   --model claude-fable-5-1 \
   --retrieval bm25 \
   --bm25-samples 16 \
+  --semantic-samples 0 \
   --example-ordering most_similar_last \
   --max-glossary-senses 15 \
-  --glossary-examples-per-phrase 15 \
+  --glossary-examples-per-phrase 0 \
   --paragraphs-per-request 1 \
   --workers 4 \
   --max-output-tokens 1024 \
@@ -396,12 +400,12 @@ Important YAML parameters:
 | `provider.api_key_env` | environment variable containing the secret key |
 | `retrieval.method` | `none`, `bm25`, `semantic`, or `hybrid` |
 | `retrieval.bm25_samples` | maximum BM25 examples per request; default `16` |
-| `retrieval.semantic_samples` | maximum semantic examples per request; default `4` |
+| `retrieval.semantic_samples` | maximum semantic examples per request; default `0` because BM25-only retrieval is the default |
 | `retrieval.semantic_model` | Sentence Transformers model ID |
 | `retrieval.semantic_device` | `cuda`, `cpu`, or supported alternative |
 | `retrieval.ordering` | example ordering; default `most_similar_last` |
 | `retrieval.max_glossary_senses` | maximum contextual translations per matched term; default `15` |
-| `retrieval.glossary_examples_per_phrase` | most relevant parallel source–target examples containing each matched phrase; default `15`; use `0` to disable |
+| `retrieval.glossary_examples_per_phrase` | most relevant parallel source–target examples containing each matched phrase; experimental and off by default (`0`) |
 | `processing.paragraphs_per_request` | consecutive source paragraphs per API call; default `1` |
 | `processing.workers` | concurrent API calls; default `4` |
 | `generation.max_output_tokens` | provider output ceiling per request; recommended default `1024` |
