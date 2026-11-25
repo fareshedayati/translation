@@ -1,6 +1,6 @@
 # Retrieval-assisted translation toolkit
 
-This is a self-contained toolkit for teams translating texts from a **source language** into a **target language**. It is especially suitable for translating the Bahá’í Writings and related materials from English into other languages, where accuracy, consistency, register, and context-sensitive terminology are essential. It can also be configured for other language pairs and text collections.
+This is a self-contained toolkit for teams translating texts from a **source language** into a **target language**. It is especially suitable for translating the Bahá’í Writings and related materials, where accuracy, consistency, register, and context-sensitive terminology are essential. The bundled examples, glossary, and evaluation results are for **Persian/Arabic→English**. The runtime itself remains configurable for other language pairs and text collections, including English→other-language projects.
 
 The toolkit uses OpenAI or Anthropic (Claude), an optional context-sensitive lexicon, and zero or more retrieved parallel examples. Each translation team supplies its own approved examples, terminology, style guidance, source passages, target language, and model configuration.
 
@@ -10,10 +10,11 @@ For each source passage, the program:
 
 1. Reads trusted SOURCE→TARGET parallel examples.
 2. Retrieves examples with BM25, semantic search, both, or neither.
-3. Finds source terms from the context-sensitive lexicon that occur in the passage.
-4. Builds a prompt containing the translation instruction, retrieved examples, relevant lexicon senses, and source passage.
-5. Sends that prompt to OpenAI or Anthropic, unless `--dry-run` is used.
-6. Writes JSONL containing the translation and traceable links back to the exact example and lexicon file lines used.
+3. Finds source terms and phrases from the context-sensitive lexicon that occur in the passage.
+4. For every matched phrase, finds parallel examples containing it and ranks those examples against the current passage.
+5. Builds a prompt containing the translation instruction, general retrieved examples, lexicon senses, the best phrase-specific examples, and the source passage.
+6. Sends that prompt to OpenAI or Anthropic, unless `--dry-run` is used.
+7. Writes JSONL containing the translation and traceable links back to the exact example and lexicon file lines used.
 
 Nothing is trained by this package. The examples and lexicon are supplied to the language model at translation time.
 
@@ -34,7 +35,38 @@ Nothing is trained by this package. The examples and lexicon are supplied to the
 - [`requirements-semantic.txt`](requirements-semantic.txt): additional semantic-search/GPU dependencies
 - [`scripts/build_glossary.py`](scripts/build_glossary.py): reproducible TSV-candidate and parallel-example to contextual-JSONL builder
 - [`scripts/merge_glossaries.py`](scripts/merge_glossaries.py): merges the evidence-backed JSONL and complete legacy TSV into one JSONL file
+- [`scripts/evaluate_fable_bm25.py`](scripts/evaluate_fable_bm25.py): reproduces the saved Persian/Arabic→English Fable/BM25 glossary experiment when the neighboring research artifacts are available
 - `translator/`: executable Python package
+
+## Persian/Arabic→English evaluation results
+
+These are reference-based experiments on the same saved 132-segment test sample unless marked otherwise. The sample was selected once with seed 42 from a 1,322-segment Persian/Arabic→English test corpus and has SHA-256 `bc7bfe8b16991c439342aec468addf8e96732392437dce23b8ef787a3021b908`. COMET uses `Unbabel/wmt22-comet-da`; BLEU and chrF use SacreBLEU. Higher is better. The results combine experiments produced here and in the accompanying research repository.
+
+| Model and method | Glossary | n | COMET | chrF | BLEU |
+|---|---|---:|---:|---:|---:|
+| Fable Sparse-KNN `(k=8,m=4)` | none | 132 | 0.7675 | 54.36 | 30.69 |
+| Fable TF-IDF/SVD `k=16` | none | 132 | 0.7626 | 55.16 | 32.64 |
+| Fable Semantic+Sparse + TF-IDF/SVD | none | 132 | 0.7688 | 56.31 | 33.56 |
+| Fable Semantic+Sparse + TF-IDF/SVD | comprehensive, ≤15 | 132 | 0.7940 | 63.05 | 41.39 |
+| Fable Semantic+Sparse + TF-IDF/SVD + BM25 | comprehensive, ≤15 | 132 | 0.7966 | 63.68 | 42.09 |
+| Fable Semantic+Sparse + BM25 | comprehensive, ≤15 | 132 | 0.7965 | 63.33 | 41.17 |
+| Fable BM25 `k=16` | comprehensive, first 15 | 132 | 0.7956 | **64.46** | **43.01** |
+| Fable BM25 `k=16` + TEaR | comprehensive, first 15 | 132 | **0.7972** | 63.83 | 42.93 |
+| Fable dynamic BM25, mean `k=9.09` | comprehensive, first 15 | 132 | 0.7939 | 63.94 | 42.77 |
+| Fable BM25 `k=16` | train-evidenced pruned, ≤3 | 132 | 0.7639 | 55.53 | 32.39 |
+| Fable BM25 `k=16` | merged contextual+legacy JSONL, first 15 | 132 | 0.7943 | 63.07 | 41.74 |
+| Fable BM25 `k=16` | bundled contextual JSONL, first 15 | 132 | 0.7642 | 54.75 | 31.70 |
+| Fable BM25 `k=16` + 15 examples per matched phrase | bundled contextual JSONL, ≤15 senses | 132 | 0.7607 | 54.72 | 31.39 |
+| GPT-6.1 Sol Semantic+Sparse + TF-IDF/SVD + BM25 | comprehensive, ≤15 | 132 | 0.7940 | — | 42.29 |
+| GPT-6.1 Sol Semantic+Sparse + BM25 | comprehensive, ≤15 | 132 | 0.7924 | — | 42.09 |
+| GPT-6.1 Sol BM25 `k=16` | comprehensive, ≤15 | 132 | 0.7918 | — | 41.75 |
+| ChatGPT Project Extra High | project files | 132 | 0.7607 | 52.67 | 29.33 |
+| ChatGPT Project High | project files | 132 | 0.7599 | 52.75 | 29.32 |
+| ChatGPT Project Pro | project files | 132 | 0.7563 | 50.36 | 27.01 |
+
+The comprehensive and merged glossaries contain substantially broader phrase coverage than the bundled evidence-backed contextual glossary, so their scores are not evidence that first-15 ordering is intrinsically better. They are different glossary resources. The provenance of all legacy comprehensive candidates should be established before using those runs for a strict no-leakage claim.
+
+The phrase-specific experiment matched 1,149 glossary phrases and supplied 8,294 independently ranked parallel examples across the 132 passages. It used 1,772,367 input tokens, 7,551 output tokens, and $18.0258 of recorded generation cost. Its lower scores show that sending 15 examples for every matched phrase can add substantial prompt noise; this option should be tuned on validation data, and a smaller value may be preferable.
 
 ## Quick start: BM25 (recommended first run)
 
@@ -268,9 +300,14 @@ retrieval:
   bm25_samples: 16
   ordering: most_similar_last
   max_glossary_senses: 15
+  glossary_examples_per_phrase: 15
 ```
 
-This retrieves the 16 most relevant source-side paragraph examples, places the most similar examples nearest to the passage being translated, and includes up to 15 contextual translations for each matched glossary term.
+This retrieves the 16 most relevant source-side paragraph examples and places the most similar examples nearest to the passage being translated. It also handles every matched glossary term or phrase separately: it finds all parallel source–target examples containing that complete phrase, removes the phrase itself from the relevance query so surrounding context drives selection, and supplies the best 15 examples for that phrase. If context words do not distinguish candidates, corpus order is the deterministic fallback. Phrase examples are selected with CPU-only BM25 and do not require a GPU.
+
+`bm25_samples` controls the general paragraph examples for the whole input. `glossary_examples_per_phrase` is different: it controls supporting parallel examples for each matched glossary phrase. `max_glossary_senses` independently limits how many contextual glossary translations are displayed for that phrase.
+
+Because the phrase-specific limit applies separately to every matched phrase, `15` can create a large prompt when one passage contains many glossary matches. The 132-passage experiment selected 8,294 phrase-specific examples. A character-based dry-run estimate predicted approximately 1.0 million input tokens, but Anthropic actually billed 1,772,367 input tokens; provider tokenization is authoritative. Always inspect a dry run, leave a substantial cost margin, and check provider token limits before a paid run. Reduce `glossary_examples_per_phrase` when prompts are too large; use `0` to disable this additional evidence while retaining ordinary glossary matches.
 
 Semantic and hybrid retrieval remain available as optional alternatives. Their example counts are independent, and duplicate examples are included only once.
 
@@ -335,6 +372,7 @@ python -m translator \
   --bm25-samples 16 \
   --example-ordering most_similar_last \
   --max-glossary-senses 15 \
+  --glossary-examples-per-phrase 15 \
   --paragraphs-per-request 1 \
   --workers 4 \
   --max-output-tokens 1024 \
@@ -363,6 +401,7 @@ Important YAML parameters:
 | `retrieval.semantic_device` | `cuda`, `cpu`, or supported alternative |
 | `retrieval.ordering` | example ordering; default `most_similar_last` |
 | `retrieval.max_glossary_senses` | maximum contextual translations per matched term; default `15` |
+| `retrieval.glossary_examples_per_phrase` | most relevant parallel source–target examples containing each matched phrase; default `15`; use `0` to disable |
 | `processing.paragraphs_per_request` | consecutive source paragraphs per API call; default `1` |
 | `processing.workers` | concurrent API calls; default `4` |
 | `generation.max_output_tokens` | provider output ceiling per request; recommended default `1024` |
@@ -370,7 +409,7 @@ Important YAML parameters:
 
 ## Output and provenance
 
-Each output line represents one API request and contains the request ID, source paragraph IDs, source paragraphs, combined source, translation, paragraph count, language names, retrieval method, input metadata, retrieved examples, and lexicon matches. With `paragraphs_per_request: 1`, one output line corresponds to one source paragraph. With larger batches, one output line corresponds to one consecutive paragraph group. Each retrieved example includes its stable ID, source JSONL path, source line, retrieval methods, and method scores. Each glossary match includes its source term, lexicon path, and source line.
+Each output line represents one API request and contains the request ID, source paragraph IDs, source paragraphs, combined source, translation, paragraph count, language names, retrieval method, input metadata, retrieved examples, and lexicon matches. With `paragraphs_per_request: 1`, one output line corresponds to one source paragraph. With larger batches, one output line corresponds to one consecutive paragraph group. Each general retrieved example includes its stable ID, source JSONL path, source line, retrieval methods, and method scores. Each glossary match includes its source term, lexicon path, source line, and the IDs and source lines of the phrase-specific parallel examples supplied for it.
 
 Input DOCX and TXT files still produce JSONL output. The toolkit does not rewrite or format a translated DOCX automatically; the stable paragraph IDs and ordered output are intended to support review and later document reconstruction without hiding paragraph-level provenance.
 

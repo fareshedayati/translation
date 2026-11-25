@@ -12,6 +12,7 @@ from translator.data import (
     match_glossary,
 )
 from translator.retrieval import BM25Index
+from translator.glossary import GlossaryExampleSelector
 from scripts.build_glossary import build_records, collect_evidence
 from scripts.merge_glossaries import merge_entries
 
@@ -30,6 +31,43 @@ class ToolkitTests(unittest.TestCase):
     def test_glossary_does_not_match_inside_longer_word(self):
         entry = GlossaryEntry("bank", (GlossarySense("banque", "finance"),))
         self.assertEqual(match_glossary("The bankruptcy filing.", [entry]), [])
+
+    def test_glossary_selects_relevant_parallel_examples_for_phrase(self):
+        examples = [
+            Example("money", "deposit cash at the bank", "déposer à la banque"),
+            Example("river", "walk beside the river bank", "marcher sur la rive"),
+            Example("noise", "a bankruptcy filing", "une faillite"),
+        ]
+        selected = GlossaryExampleSelector(examples).select_for_phrase(
+            "They rested beside the river bank.", "bank", 2
+        )
+        self.assertEqual([example.id for example in selected], ["river", "money"])
+
+    def test_glossary_phrase_examples_require_the_complete_term(self):
+        examples = [
+            Example("exact", "the river bank", "la rive"),
+            Example("longer", "the bankruptcy filing", "la faillite"),
+        ]
+        candidates = GlossaryExampleSelector(examples).candidates("bank")
+        self.assertEqual([example.id for example in candidates], ["exact"])
+
+    def test_glossary_phrase_examples_fall_back_to_corpus_order(self):
+        examples = [
+            Example("first", "first bank", "première banque"),
+            Example("second", "second bank", "deuxième banque"),
+        ]
+        selected = GlossaryExampleSelector(examples).select_for_phrase("bank", "bank", 1)
+        self.assertEqual([example.id for example in selected], ["first"])
+
+    def test_glossary_phrase_examples_respect_per_phrase_limit(self):
+        examples = [
+            Example(str(index), f"context {index} bank", f"target {index}")
+            for index in range(20)
+        ]
+        selected = GlossaryExampleSelector(examples).select_for_phrase(
+            "bank", "bank", 15
+        )
+        self.assertEqual(len(selected), 15)
 
     def test_text_input_splits_on_blank_lines(self):
         with TemporaryDirectory() as directory:

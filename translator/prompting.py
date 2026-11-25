@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .data import GlossaryEntry
+from .glossary import PhraseExamples
 from .retrieval import Retrieved
 
 
@@ -19,13 +20,16 @@ def system_prompt(source_language: str, target_language: str, style: str) -> str
     )
 
 
-def user_prompt(source: str, examples: list[Retrieved], glossary: list[GlossaryEntry], source_language: str, target_language: str, *, paragraph_count: int = 1, max_glossary_senses: int = 15) -> str:
+def user_prompt(source: str, examples: list[Retrieved], glossary: list[GlossaryEntry], source_language: str, target_language: str, *, paragraph_count: int = 1, max_glossary_senses: int = 15, phrase_examples: list[PhraseExamples] | None = None) -> str:
     blocks: list[str] = []
     if examples:
         blocks.append("RETRIEVED PARALLEL EXAMPLES")
         for number, item in enumerate(examples, 1):
             blocks.append(f"Example {number} [id={item.example.id}]\n{source_language}: {item.example.source}\n{target_language}: {item.example.target}")
     if glossary:
+        examples_by_phrase = {
+            item.entry.source: item.examples for item in (phrase_examples or [])
+        }
         blocks.append("CONTEXT-SENSITIVE LEXICON MATCHES")
         for entry in glossary:
             lines = [f"Term: {entry.source}"]
@@ -34,6 +38,14 @@ def user_prompt(source: str, examples: list[Retrieved], glossary: list[GlossaryE
                 lines.append(f"- {sense.target} — use when: {sense.when}.{evidence}")
             if entry.notes:
                 lines.append(f"Notes: {entry.notes}")
+            selected = examples_by_phrase.get(entry.source, ())
+            if selected:
+                lines.append("Most relevant parallel examples containing this term:")
+                for number, example in enumerate(selected, 1):
+                    lines.append(
+                        f"  {number}. {source_language}: {example.source}\n"
+                        f"     {target_language}: {example.target}"
+                    )
             blocks.append("\n".join(lines))
     if paragraph_count > 1:
         blocks.append(

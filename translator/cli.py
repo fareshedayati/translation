@@ -11,6 +11,7 @@ import yaml
 from dotenv import load_dotenv
 
 from .data import load_examples, load_glossary, load_inputs, match_glossary
+from .glossary import GlossaryExampleSelector
 from .prompting import system_prompt, user_prompt
 from .providers import make_provider
 from .retrieval import Retriever
@@ -33,6 +34,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--semantic-device", help="Usually cuda; cpu is supported but slower")
     result.add_argument("--example-ordering", choices=["most_similar_first", "most_similar_last"])
     result.add_argument("--max-glossary-senses", type=int)
+    result.add_argument(
+        "--glossary-examples-per-phrase",
+        type=int,
+        help="Relevant parallel examples supplied for each matched glossary phrase (default: 15)",
+    )
     result.add_argument("--paragraphs-per-request", type=int, help="Consecutive paragraphs per API request (default: 1)")
     result.add_argument("--workers", type=int, help="Concurrent API requests (default: 4)")
     result.add_argument("--max-output-tokens", type=int)
@@ -83,6 +89,11 @@ def main(argv: list[str] | None = None) -> None:
         (retrieval_cfg, "semantic_device", args.semantic_device),
         (retrieval_cfg, "ordering", args.example_ordering),
         (retrieval_cfg, "max_glossary_senses", args.max_glossary_senses),
+        (
+            retrieval_cfg,
+            "glossary_examples_per_phrase",
+            args.glossary_examples_per_phrase,
+        ),
         (processing, "paragraphs_per_request", args.paragraphs_per_request),
         (processing, "workers", args.workers),
         (generation, "max_output_tokens", args.max_output_tokens),
@@ -110,6 +121,11 @@ def main(argv: list[str] | None = None) -> None:
     max_glossary_senses = int(retrieval_cfg.get("max_glossary_senses", 15))
     if max_glossary_senses < 1:
         raise ValueError("retrieval.max_glossary_senses must be at least 1")
+    glossary_examples_per_phrase = int(
+        retrieval_cfg.get("glossary_examples_per_phrase", 15)
+    )
+    if glossary_examples_per_phrase < 0:
+        raise ValueError("retrieval.glossary_examples_per_phrase cannot be negative")
     paragraphs_per_request = int(processing.get("paragraphs_per_request", 1))
     workers = int(processing.get("workers", 4))
     if paragraphs_per_request < 1:
@@ -125,14 +141,18 @@ def main(argv: list[str] | None = None) -> None:
     glossary_path = _path(base, args.glossary or files.get("glossary"))
     style_path = _path(base, files.get("style_instruction"))
     output_path = _path(base, args.output or _required(config, "files", "output"))
-    if method != "none" and examples_path is None:
-        raise ValueError("files.examples is required unless retrieval.method is none")
+    needs_phrase_examples = bool(glossary_path) and glossary_examples_per_phrase > 0
+    if examples_path is None and (method != "none" or needs_phrase_examples):
+        raise ValueError(
+            "files.examples is required for example retrieval or phrase-specific glossary examples"
+        )
     examples = load_examples(examples_path) if examples_path else []
     glossary = load_glossary(glossary_path)
     records = load_inputs(input_path)
     if not records:
         raise ValueError(f"{input_path}: no input passages found")
     retriever = Retriever(examples, retrieval_cfg) if method != "none" else None
+    glossary_example_selector = GlossaryExampleSelector(examples)
     source_language, target_language = _required(config, "languages", "source"), _required(config, "languages", "target")
     style = style_path.read_text(encoding="utf-8") if style_path else ""
     system = system_prompt(source_language, target_language, style)
@@ -158,6 +178,11 @@ def main(argv: list[str] | None = None) -> None:
         if ordering == "most_similar_last":
             retrieved.reverse()
         matched = match_glossary(source, glossary)
+        phrase_examples = glossary_example_selector.select(
+            source,
+            matched,
+            glossary_examples_per_phrase,
+        )
         prompt = user_prompt(
             source,
             retrieved,
@@ -166,6 +191,7 @@ def main(argv: list[str] | None = None) -> None:
             target_language,
             paragraph_count=len(batch),
             max_glossary_senses=max_glossary_senses,
+            phrase_examples=phrase_examples,
         )
         prepared.append(
             {
@@ -178,7 +204,22 @@ def main(argv: list[str] | None = None) -> None:
                 "target_language": target_language,
                 "retrieval_method": method,
                 "retrieved_examples": [{"id": item.example.id, "source_file": str(examples_path) if examples_path else None, "source_line": item.example.line, "methods": item.methods, "scores": item.scores} for item in retrieved],
-                "glossary_matches": [{"source": item.source, "glossary_file": str(glossary_path), "source_line": item.line} for item in matched],
+                "glossary_matches": [
+                    {
+                        "source": item.entry.source,
+                        "parallel_examples": [
+                            {
+                                "id": example.id,
+                                "source_file": str(examples_path) if examples_path else None,
+                                "source_line": example.line,
+                            }
+                            for example in item.examples
+                        ],
+                        "glossary_file": str(glossary_path),
+                        "source_line": item.entry.line,
+                    }
+                    for item in phrase_examples
+                ],
                 "metadata": [record.metadata for record in batch],
                 "paragraph_count": len(batch),
                 "_prompt": prompt,

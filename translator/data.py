@@ -181,14 +181,19 @@ def normalize(text: str) -> str:
 
 
 def match_glossary(source_text: str, entries: list[GlossaryEntry]) -> list[GlossaryEntry]:
-    normalized = normalize(source_text)
-    def contains(entry: GlossaryEntry) -> bool:
-        term = normalize(entry.source)
-        # Space-delimited writing systems need word boundaries. For scripts normally
-        # written without spaces, substring matching is the useful fallback.
-        if any(character.isspace() for character in normalized):
-            return re.search(rf"(?<!\w){re.escape(term)}(?!\w)", normalized) is not None
-        return term in normalized
-
     # Longest terms first keeps the most informative phrases near the top of the prompt.
-    return sorted((entry for entry in entries if contains(entry)), key=lambda item: len(normalize(item.source)), reverse=True)
+    return sorted(
+        (entry for entry in entries if contains_glossary_term(source_text, entry.source)),
+        key=lambda item: len(normalize(item.source)),
+        reverse=True,
+    )
+
+
+def contains_glossary_term(source_text: str, term_text: str) -> bool:
+    normalized = normalize(source_text)
+    term = normalize(term_text)
+    # Space-delimited writing systems need word boundaries. For scripts normally
+    # written without spaces, substring matching is the useful fallback.
+    if any(character.isspace() for character in normalized):
+        return re.search(rf"(?<!\w){re.escape(term)}(?!\w)", normalized) is not None
+    return term in normalized

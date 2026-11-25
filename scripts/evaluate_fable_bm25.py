@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate the merged JSONL glossary on the saved Fable BM25 held-out sample."""
+"""Evaluate phrase-specific parallel examples on the saved Fable BM25 sample."""
 
 from __future__ import annotations
 
@@ -8,13 +8,11 @@ import hashlib
 import json
 import os
 import random
+import shutil
 import sys
 from pathlib import Path
 
 import yaml
-
-
-CONDITION = "fable_bm25_k16_merged_jsonl_glossary15"
 
 
 def rows(path: Path) -> list[dict]:
@@ -37,18 +35,54 @@ def write_json(path: Path, payload: dict) -> None:
     os.replace(temporary, path)
 
 
+def trim_failed_suffix(path: Path) -> int:
+    """Back up and remove a trailing failed suffix so generation can resume."""
+    if not path.exists():
+        return 0
+    records = rows(path)
+    first_failed = next(
+        (
+            index
+            for index, record in enumerate(records)
+            if not str(record.get("prediction", "")).strip()
+        ),
+        len(records),
+    )
+    if first_failed == len(records):
+        return 0
+    if any(
+        str(record.get("prediction", "")).strip()
+        for record in records[first_failed:]
+    ):
+        raise ValueError(
+            f"cannot safely resume {path}: failed records are not a contiguous suffix"
+        )
+    backup = path.with_suffix(path.suffix + ".pre_retry")
+    if not backup.exists():
+        shutil.copy2(path, backup)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8") as handle:
+        for record in records[:first_failed]:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    os.replace(temporary, path)
+    return len(records) - first_failed
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--style-repo", type=Path, default=Path("../Style-Aware-MT"))
     parser.add_argument("--glossary", type=Path, default=Path("data/glossary.jsonl"))
     parser.add_argument("--workers", type=int, default=4)
-    parser.add_argument("--generation-cap", type=float, default=8.0)
+    parser.add_argument("--generation-cap", type=float, default=15.0)
+    parser.add_argument("--phrase-examples", type=int, default=15)
     parser.add_argument("--prepare-only", action="store_true")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.phrase_examples < 0:
+        raise ValueError("--phrase-examples cannot be negative")
     project_root = Path(__file__).resolve().parents[1]
     style_root = args.style_repo.expanduser().resolve()
     glossary_path = (
@@ -56,9 +90,13 @@ def main() -> None:
         if args.glossary.is_absolute()
         else (project_root / args.glossary).resolve()
     )
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
     if str(style_root) not in sys.path:
         sys.path.insert(0, str(style_root))
 
+    from translator.data import load_examples, load_glossary
+    from translator.glossary import GlossaryExampleSelector
     from src.infer.run import Glossary, _normalize_glossary_text, build_fewshot_user, order_exemplars
     from src.infer.tfidf_svd_sweep import generate
     from src.retrieval.bm25 import BM25Index
@@ -67,14 +105,21 @@ def main() -> None:
     sample_path = style_root / "data/splits/test_sweep10_seed42.jsonl"
     index_path = style_root / "data/bm25_index"
     style_path = style_root / "prompts/style_instruction_shoghi_effendi.txt"
-    out_dir = style_root / "outputs/fable_bm25_merged_glossary_sweep10"
-    results_dir = style_root / "results/fable_bm25_merged_glossary_sweep10"
+    examples_path = project_root / "data/examples.jsonl"
+    out_dir = style_root / "outputs/fable_bm25_phrase_examples_sweep10"
+    results_dir = style_root / "results/fable_bm25_phrase_examples_sweep10"
+    condition = f"fable_bm25_k16_contextual_glossary_phrase_examples{args.phrase_examples}"
 
     cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     cfg["prompt"]["style_instruction_file"] = str(style_path)
     sample_rows = rows(sample_path)
     sources = [row["input"] for row in sample_rows]
 
+    contextual_entries = load_glossary(glossary_path)
+    contextual_by_key = {
+        _normalize_glossary_text(entry.source): entry for entry in contextual_entries
+    }
+    phrase_example_selector = GlossaryExampleSelector(load_examples(examples_path))
     entries: dict[str, tuple[str, tuple[str, ...]]] = {}
     ignored_short = 0
     source_rows = 0
@@ -104,6 +149,7 @@ def main() -> None:
             if targets:
                 entries[key] = (source, tuple(targets))
                 max_phrase_tokens = max(max_phrase_tokens, len(key.split()))
+
     glossary = Glossary(entries, max_phrase_tokens, source_rows, ignored_short)
 
     bm25 = BM25Index(index_path)
@@ -121,8 +167,26 @@ def main() -> None:
         glossary.matches(source, max_pairs=1_000_000, max_equivalences=15)
         for source in sources
     ]
-    messages = [
-        build_fewshot_user(
+    phrase_examples = []
+    for source, source_matches in zip(sources, matches):
+        source_selections = []
+        for display, _ in source_matches:
+            entry = contextual_by_key.get(_normalize_glossary_text(display))
+            phrase = entry.source if entry else display
+            source_selections.append(
+                (
+                    display,
+                    phrase_example_selector.select_for_phrase(
+                        source, phrase, args.phrase_examples
+                    ),
+                )
+            )
+        phrase_examples.append(source_selections)
+
+    messages = []
+    marker = "Now translate the following text into English in the same style:\n"
+    for source, examples, source_selections in zip(sources, ordered, phrase_examples):
+        message = build_fewshot_user(
             source,
             examples,
             glossary,
@@ -130,8 +194,19 @@ def main() -> None:
             max_glossary_terms=1_000_000,
             max_glossary_equivalences=15,
         )
-        for source, examples in zip(sources, ordered)
-    ]
+        evidence = ["Phrase-specific parallel examples ranked for this passage:"]
+        for display, selected_examples in source_selections:
+            if not selected_examples:
+                continue
+            evidence.append(f"Matched phrase: {display}")
+            for number, example in enumerate(selected_examples, 1):
+                evidence.append(
+                    f"  {number}. Source: {example.source}\n"
+                    f"     English: {example.target}"
+                )
+        if len(evidence) > 1:
+            message = message.replace(marker, "\n".join(evidence) + "\n\n" + marker, 1)
+        messages.append(message)
 
     system_chars = len(style_path.read_text(encoding="utf-8"))
     prompt_chars = sum(system_chars + len(message) for message in messages)
@@ -142,7 +217,7 @@ def main() -> None:
         estimated_input_tokens * input_rate + estimated_output_tokens * output_rate
     ) / 1_000_000
     manifest = {
-        "condition": CONDITION,
+        "condition": condition,
         "model": cfg["generator"]["model"],
         "sample": str(sample_path),
         "sample_sha256": sha256(sample_path),
@@ -157,7 +232,15 @@ def main() -> None:
             "max_equivalences": 15,
             "matched_terms": sum(map(len, matches)),
             "rows_with_matches": sum(bool(items) for items in matches),
-            "sense_order": "evidence-backed JSONL senses first, then legacy candidates",
+            "phrase_examples_per_match": args.phrase_examples,
+            "parallel_examples_file": str(examples_path),
+            "parallel_examples_sha256": sha256(examples_path),
+            "selected_phrase_examples": sum(
+                len(examples)
+                for selections in phrase_examples
+                for _, examples in selections
+            ),
+            "selection_method": "source-side CPU BM25 among examples containing the complete phrase",
         },
         "style_instruction": str(style_path),
         "prompt_characters": prompt_chars,
@@ -177,8 +260,16 @@ def main() -> None:
                     "bm25_rows": rankings[index].tolist(),
                     "bm25_scores": scores[index].tolist(),
                     "glossary_matches": [
-                        {"source": source, "equivalences": list(targets)}
-                        for source, targets in matches[index]
+                        {
+                            "source": display,
+                            "equivalences": list(targets),
+                            "parallel_example_ids": [
+                                example.id for example in selected_examples
+                            ],
+                        }
+                        for (display, targets), (_, selected_examples) in zip(
+                            matches[index], phrase_examples[index]
+                        )
                     ],
                 }
                 for index in range(len(sample_rows))
@@ -189,6 +280,11 @@ def main() -> None:
     if args.prepare_only:
         return
 
+    output_path = out_dir / f"{condition}_{sample_path.stem}.jsonl"
+    retry_count = trim_failed_suffix(output_path)
+    if retry_count:
+        print(f"[{condition}] retrying {retry_count} trailing failed rows")
+
     generate(
         cfg,
         sample_rows,
@@ -198,8 +294,8 @@ def main() -> None:
         out_dir=out_dir,
         workers=args.workers,
         cost_cap=args.generation_cap,
-        condition=CONDITION,
-        retrieval="okapi_bm25_k16_merged_jsonl_glossary15",
+        condition=condition,
+        retrieval=f"okapi_bm25_k16_contextual_glossary_phrase_examples{args.phrase_examples}",
     )
 
 
